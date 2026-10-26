@@ -1,0 +1,103 @@
+name: sync-delegates
+
+# Checks the three upstream humanizers every morning and opens one pull request
+# per delegate that moved. It never merges: vendored third-party content gets a
+# human review, and an upstream renumbering silently invalidates
+# references/pattern-map.md, which no script can fix.
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      delegate:
+        description: 'Which delegate to sync (en, de, ru, or all)'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        delegate: [en, de, ru]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Skip if a single delegate was requested
+        id: gate
+        run: |
+          want='${{ github.event.inputs.delegate }}'
+          if [ -n "$want" ] && [ "$want" != "all" ] && [ "$want" != "${{ matrix.delegate }}" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check upstream
+        if: steps.gate.outputs.run == 'true'
+        id: check
+        run: |
+          set -o pipefail
+          ./scripts/sync_delegates.sh ${{ matrix.delegate }} | tee /tmp/report.txt
+          if grep -q '^status   : behind' /tmp/report.txt; then
+            echo "behind=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "behind=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply and validate
+        if: steps.check.outputs.behind == 'true'
+        run: |
+          ./scripts/sync_delegates.sh ${{ matrix.delegate }} --apply
+          ./scripts/validate.sh
+
+      - name: Open pull request
+        if: steps.check.outputs.behind == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          D=${{ matrix.delegate }}
+          VER=$(cat delegates/$D/VERSION 2>/dev/null || echo unknown)
+          SHA=$(cat delegates/$D/COMMIT)
+          BRANCH="sync/$D-$SHA"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "branch $BRANCH already exists, nothing to do"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "Update $D delegate to $VER ($SHA)"
+          git push -u origin "$BRANCH"
+
+          WARN=""
+          if grep -q '^WARNING' /tmp/report.txt; then
+            WARN=$'\n**Pattern numbering changed upstream.** `references/pattern-map.md` is now wrong for this delegate and must be rebuilt by hand before merging.\n'
+          fi
+
+          gh pr create \
+            --title "Update $D delegate to $VER" \
+            --body "Automated vendoring refresh for the \`$D\` delegate.
+
+      Upstream now at \`$SHA\` (version $VER).
+      $WARN
+      Checked before opening: \`scripts/validate.sh\` passed, which covers script syntax, the single-SKILL.md rule, the description budget, our own whitespace and artefact rules, and a German linter smoke run.
+
+      Still needs a human:
+      - read the upstream diff, this vendors third-party content
+      - update the row in \`VERSIONS.md\` and the \`delegates\` field in \`SKILL.md\`
+      - spot-check \`references/pattern-map.md\`"
