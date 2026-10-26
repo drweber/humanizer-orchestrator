@@ -15,9 +15,9 @@ description: |
   PR descriptions, commit messages, Notion pages, emails, CVs, blog posts.
 license: MIT
 metadata:
-  version: "3.0.0"
+  version: "3.1.0"
   role: orchestrator
-  delegates: "en=blader/humanizer 3.1.0; de=marmbiz/humanizer-de 5.28.2; ru=Vladimir-Human/humanizer-ru 4.1.5"
+  delegates: "en=blader/humanizer 3.1.0; de=marmbiz/humanizer-de 5.28.2; ru=Vladimir-Human/humanizer-ru 4.1.5; text-hygiene=guillaumemeyer/watermarks-remover 0.7.0"
 ---
 
 # Humanizer
@@ -39,24 +39,35 @@ Do not skip steps 1 to 3. They change what the delegates are allowed to touch, a
 
 ## Artefact and watermark cleanup
 
-Two deterministic passes, in this order. Both protect fenced code, inline code spans and frontmatter; neither touches wording.
+Three deterministic passes, in this order. Each owns what the others do not, so running them out of order leaves work undone. All protect fenced code, inline code spans and frontmatter; none touches wording.
 
 ```
 python3 delegates/ru/scripts/clean_paste.py <file> --in-place
+python3 delegates/text-hygiene/scripts/clean_text.py <file> -o <file>.cleaned --stats
 python3 scripts/strip_watermarks.py <file>
 ```
 
-The first is the Russian delegate's own cleaner and is language-agnostic despite living there: citation tokens, the utm tail a chat assistant appends to links, zero-width characters, BOM, bidi controls. It keeps a `.bak`.
+**Pass 1**, the Russian delegate's cleaner, language-agnostic despite living there: citation tokens, the utm tail a chat assistant appends to links, zero-width characters, BOM, bidi controls. Keeps a `.bak`.
 
-The second covers what the first leaves behind: NBSP and the other non-breaking and fixed-width spaces, variation selectors, leftover vendor citation tokens, and homoglyphs.
+**Pass 2**, the text-hygiene delegate: the full invisible and format-character table, which is wider than either of the other two. Tag characters (U+E0000 to U+E007F), noncharacters, private-use areas, musical and shorthand format controls, exotic spaces, and NFKC normalisation. It also reports each hit with a confidence level, and `inspect_text.py --stylometry` scores the text before and after. Prefer its `*.cleaned.*` output unless the user asked for in-place editing.
 
-**Homoglyphs are normalised automatically**, but only where Latin, Cyrillic or Greek letters are mixed *inside a single word*. The word's majority script wins and the minority characters are mapped to it, so `cоnfig` with a Cyrillic `о` becomes Latin and `конфиг` stays untouched. A single-script word is never changed, which is what makes this safe in a trilingual document.
+**Pass 3**, this project's own: homoglyphs, which neither of the others touches at all.
 
-**Inside a URL or a bare domain, a mixed-script word is reported and left alone.** Rewriting a hostname would change where the link points, and a mixed-script domain is a phishing indicator that a person has to look at rather than a defect to auto-fix.
+**Homoglyphs are normalised automatically**, but only where Latin, Cyrillic or Greek letters are mixed *inside a single word*. The word's majority script wins and the minority characters map to it, so a Latin word carrying a Cyrillic letter is repaired while a wholly Cyrillic word is untouched. That scoping is what makes it safe in a trilingual document; a blanket conversion would destroy Russian text.
 
-Add `--check` to either for a dry run. `strip_watermarks.py` refuses source files unless given `--force`, because a cleaner that hunts for citation tokens will corrupt a regex literal or a test fixture that legitimately contains them.
+**Inside a URL or a bare domain, a mixed-script word is reported and left alone.** Rewriting a hostname changes where the link points, and a mixed-script domain is a phishing indicator a person has to look at rather than a defect to auto-fix. Report it under the isolation section of the findings, not as a writing-quality finding.
 
-**What this does not do.** Statistical watermarks such as SynthID-text are carried in the distribution of token choices, not in characters. No character-level pass touches them, and this one makes no claim to. They degrade only under substantial rewriting, which is a side effect of editing for substance rather than a feature of these scripts.
+Add `--check` to pass 1 or 3 for a dry run. `strip_watermarks.py` refuses source files unless given `--force`, because a cleaner that hunts vendor tokens will corrupt a regex literal that legitimately contains them.
+
+### Binary files
+
+Images, PDF, Office documents, audio and video carry provenance in metadata rather than in characters: C2PA, EXIF, XMP, OOXML document properties. None of the vendored passes reads those formats. The text-hygiene upstream ships an HTTP service that does, which this project deliberately does not vendor.
+
+If `WATERMARKS_SERVICE_URL` is set and reachable, use it for binary files and say which formats were processed. If it is not, say plainly that binary provenance was not checked and continue with the text. Never imply a binary file was cleaned when only its text was.
+
+### What this does not do
+
+Statistical watermarks such as SynthID-text, Kirchenbauer green-list and keyed-Gumbel marks are carried in the distribution of token choices, not in characters. No character-level pass touches them, and none of the three above makes that claim. They degrade only under substantial rewriting, which is a side effect of editing for substance rather than a feature of these scripts. `delegates/text-hygiene/references/watermark-notes.md` and `mark-classes.md` describe the classes in detail.
 
 ## Delegates
 
@@ -65,12 +76,15 @@ Add `--check` to either for a dry run. `strip_watermarks.py` refuses source file
 | English | `delegates/en/humanizer-en.md` | the whole file, it is self-contained | 26 patterns, MIT |
 | German | `delegates/de/humanizer-de.md` | then `delegates/de/references/` as it directs | 72 patterns with HIGH/MEDIUM/LOW; ships working linters |
 | Russian | `delegates/ru/humanizer-ru.md` | then `delegates/ru/references/` as it directs | 19 patterns, genre gates, count thresholds |
+| any | `delegates/text-hygiene/text-hygiene.md` | when cleaning artefacts, or for the mark-class references | Language-agnostic. Not a style catalogue: Unicode hygiene, stylometry scoring, mark classes |
 
 **German tooling.** Dependency-free and verified from the vendored path. From `delegates/de/`, run `python3 scripts/humanizer_audit.py --file <path> --mode <locker|sachlich|formal>` for the combined check, or the individual linters it names. For inline text, write it to a temporary UTF-8 file first and pass `--file`; never interpolate user text into a shell command.
 
 **Russian tooling.** `clean_paste.py` as described above, and `check_facts.py` for source and claim checks.
 
 **English has no tooling.** Judgment only.
+
+**Text-hygiene tooling.** `clean_text.py`, `inspect_text.py` with `--stylometry`, and `score_stylometry.py`, all standard-library Python 3 and run from the vendored path. Use `inspect_text.py --json` before and after so the report can state what was removed rather than asserting the file is clean.
 
 **If a delegate directory is missing**, say so plainly, fall back to the English catalogue plus `references/pattern-map.md`, and mark the report as degraded. Do not pretend to native coverage you do not have.
 

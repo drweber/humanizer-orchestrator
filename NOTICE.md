@@ -24,6 +24,14 @@ Provides the Russian catalogue of 19 patterns, the genre-gated decision tree, th
 
 The upstream `eval/` directory, including its benchmark corpus, is not vendored.
 
+## delegates/text-hygiene — guillaumemeyer/watermarks-remover 0.7.0
+
+MIT, Copyright (c) 2026 Guillaume Meyer and contributors. https://github.com/guillaumemeyer/watermarks-remover
+
+Vendored from that project's `clean-user-facing-text` skill, which is self-contained and needs no service: the invisible and format-character table including tag characters, noncharacters, private-use areas and exotic spaces, NFKC normalisation, per-hit confidence levels, and the stylometry scorer. The `mark-classes.md` and `removal-matrix.md` references come from the same project's `remove-ai-marks` skill.
+
+Not vendored from it: the `remove-ai-marks` HTTP client and its service, the Docker images, the benchmark corpora, and the `stealer/` module.
+
 ## This orchestrator
 
 MIT. Original material, claiming no part of the above:
@@ -34,7 +42,7 @@ MIT. Original material, claiming no part of the above:
 - `references/pattern-map.md`: crosswalk between the three numbering schemes.
 - `references/technical-docs.md`: engineering and operational document tells, covered by none of the delegates.
 - `references/house-rules.md`: this author's own conventions.
-- `scripts/strip_watermarks.py`, `scripts/normalize_whitespace.py`, `scripts/sync_delegates.sh`, `scripts/validate.sh`.
+- `scripts/strip_watermarks.py` (homoglyph normalisation; the rest of its original character handling was retired in favour of the text-hygiene delegate), `scripts/normalize_whitespace.py`, `scripts/sync_delegates.sh`, `scripts/validate.sh`.
 - The GitHub Actions workflows.
 
 ## Shared ancestry

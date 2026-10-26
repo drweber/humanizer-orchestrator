@@ -25,6 +25,20 @@ for d in en de ru; do
     && note "delegate $d" "ok $(cat delegates/$d/VERSION 2>/dev/null) @$(cat delegates/$d/COMMIT)" \
     || bad "delegate $d" "missing entrypoint or COMMIT"
 done
+[ -f delegates/text-hygiene/text-hygiene.md ] && [ -s delegates/text-hygiene/COMMIT ] \
+  && note "delegate text-hygiene" "ok $(cat delegates/text-hygiene/VERSION 2>/dev/null) @$(cat delegates/text-hygiene/COMMIT)" \
+  || bad "delegate text-hygiene" "missing entrypoint or COMMIT"
+
+# the three cleanup passes must chain in order.
+# the fixture is built with python3: bash 3.2 on macOS does not expand \u in printf
+python3 -c 'open("/tmp/_hz_chain.txt","w",encoding="utf-8").write(
+  "a\u200bb NBSP\u00a0c Tag\U000e0041d c\u043enfig \u043a\u043e\u043d\u0444\u0438\u0433\n")'
+python3 delegates/text-hygiene/scripts/clean_text.py /tmp/_hz_chain.txt -o /tmp/_hz_chain2.txt >/dev/null 2>&1 \
+  && python3 scripts/strip_watermarks.py /tmp/_hz_chain2.txt >/dev/null 2>&1 \
+  && python3 -c 'import sys;t=open("/tmp/_hz_chain2.txt",encoding="utf-8").read();
+sys.exit(0 if ("config" in t and "\u043a\u043e\u043d\u0444\u0438\u0433" in t
+  and "\u200b" not in t and "\u00a0" not in t and "\U000e0041" not in t) else 1)' \
+  && note "cleanup chain" "ok" || bad "cleanup chain" "clean_text + strip_watermarks did not produce the expected result"
 
 # 4. scripts compile
 for f in scripts/*.py; do

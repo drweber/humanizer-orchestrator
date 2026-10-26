@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Remove machine-paste artefacts that survive the Russian delegate's clean_paste.py.
+"""Normalise homoglyphs. The last step of the three-pass artefact cleanup.
 
-Covers the gap, not the overlap. Run clean_paste.py first for citation tokens,
-utm tails, zero-width characters, BOM and bidi controls; this handles what it
-leaves behind:
+Pass 1  delegates/ru/scripts/clean_paste.py   citation tokens, utm tails,
+        zero-width characters, BOM, bidi controls
+Pass 2  delegates/text-hygiene/scripts/clean_text.py   the full invisible and
+        format-character table: tag characters, noncharacters, private use,
+        musical and shorthand format controls, exotic spaces, NFKC
+Pass 3  this script                            homoglyphs, which neither of the
+        other two touches, plus any vendor artefact tokens they leave behind
 
-  spaces       NBSP, narrow NBSP, en/em/thin/hair space, figure space -> plain space
-  invisible    variation selectors, remaining format characters
-  homoglyphs   Latin/Cyrillic/Greek mixed inside ONE word -> normalised to the
-               word's majority script
-  artefacts    chat-citation leftovers listed in ARTEFACT_TOKENS below
+Homoglyphs are normalised only where Latin, Cyrillic or Greek letters are mixed
+INSIDE ONE WORD. The word's majority script wins and the minority characters map
+to it, so a Latin word carrying a Cyrillic letter is repaired while a wholly
+Cyrillic word is untouched. That scoping is what makes this safe in a trilingual
+document; a blanket script conversion would destroy Russian text.
+
+Inside a URL or a bare domain a mixed-script word is reported and left alone.
+Rewriting a hostname changes where the link points, and a mixed-script domain is
+a phishing signal a person must see rather than a defect to auto-fix.
 
 Protected byte for byte: fenced code blocks, inline code spans, indented code,
-YAML/TOML frontmatter, and URLs. A homoglyph inside a URL or a bare domain is
-never rewritten, only reported: silently "fixing" a hostname would change where
-a link points, and a mixed-script domain is a phishing signal a human must see.
-
-Source files are refused unless --force, because a cleaner that rewrites prose
-will happily corrupt a regex literal or a test fixture that contains the very
-tokens it hunts for.
+YAML/TOML frontmatter. Source files are refused unless --force, because a
+cleaner that hunts vendor tokens will corrupt a regex literal that contains them.
 
 Usage
   strip_watermarks.py [--check] [--report] [--force] FILE [FILE ...]
@@ -36,12 +39,6 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 
-SPACES = {
-    "\u00a0": " ", "\u202f": " ", "\u2007": " ", "\u2002": " ", "\u2003": " ",
-    "\u2004": " ", "\u2005": " ", "\u2006": " ", "\u2008": " ", "\u2009": " ",
-    "\u200a": " ", "\u205f": " ", "\u3000": " ",
-}
-INVISIBLE = re.compile("[\ufe00-\ufe0f\u2060-\u2064\u206a-\u206f\U000e0100-\U000e01ef]")
 
 # assembled at runtime so the literals never sit in the file as matchable text
 ARTEFACT_TOKENS = ["grok" + "_card://", "oai" + "cite", "content" + "Reference"]
@@ -104,12 +101,6 @@ def fix_word(word: str, counts: Counter) -> str:
 
 
 def clean_segment(text: str, counts: Counter) -> str:
-    for bad, good in SPACES.items():
-        if bad in text:
-            counts["space"] += text.count(bad)
-            text = text.replace(bad, good)
-    text, n = INVISIBLE.subn("", text)
-    counts["invisible"] += n
     text, n = ARTEFACTS.subn("", text)
     counts["artefact"] += n
 

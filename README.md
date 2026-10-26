@@ -26,6 +26,7 @@ Each is the native authority for its language, based on that language's own Wiki
 | English | [blader/humanizer](https://github.com/blader/humanizer) 3.1.0 | 26 patterns |
 | German | [marmbiz/humanizer-de](https://github.com/marmbiz/humanizer-de) 5.28.2 | 72 patterns, HIGH/MEDIUM/LOW, plus working linters |
 | Russian | [Vladimir-Human/humanizer-ru](https://github.com/Vladimir-Human/humanizer-ru) 4.1.5 | 19 patterns, genre gates, count thresholds |
+| any | [guillaumemeyer/watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover) 0.7.0 | Not a style catalogue: Unicode hygiene, stylometry scoring, mark classes |
 
 They are vendored at pinned commits under `delegates/`, not installed as separate skills, so that this orchestrator is the single entry point. A scheduled workflow keeps them current by pull request.
 
@@ -35,7 +36,9 @@ They are vendored at pinned commits under `delegates/`, not installed as separat
 
 **Mixed-language routing.** Segment first, then route. A Russian paragraph never goes to the German delegate because the file is mostly German. Quoted strings, identifiers, UI labels and error messages stay in their own language and are not restyled at all.
 
-**Artefact and homoglyph cleanup**, run before analysis because invisible characters distort the German rhythm metrics. Homoglyphs are normalised automatically but only inside a single word, where the majority script wins — so `cоnfig` with a Cyrillic `о` becomes Latin while `конфиг` is untouched. Inside a URL or bare domain a mixed-script word is reported and left alone: rewriting a hostname changes where the link points, and a mixed-script domain is a phishing signal for a human to look at.
+**Artefact and homoglyph cleanup**, three deterministic passes run before analysis because invisible characters distort the German rhythm metrics. The Russian delegate's cleaner takes citation tokens, utm tails and zero-width characters; the text-hygiene delegate takes the full format-character table including tag characters, noncharacters and private-use areas, with NFKC and per-hit confidence; this project's own pass takes homoglyphs, which neither of the others touches.
+
+Homoglyphs are normalised automatically but only inside a single word, where the majority script wins — so `cоnfig` with a Cyrillic `о` becomes Latin while `конфиг` is untouched. Inside a URL or bare domain a mixed-script word is reported and left alone: rewriting a hostname changes where the link points, and a mixed-script domain is a phishing signal for a human to look at.
 
 **Engineering documentation**, covered by no delegate: postmortems without timestamps, symmetric ADR trade-offs, risks without owners, migration guides with no rollback, and fabricated flags or config keys.
 
@@ -48,8 +51,9 @@ They are vendored at pinned commits under `delegates/`, not installed as separat
 ```bash
 ./scripts/validate.sh                                          # package self-check
 
-python3 delegates/ru/scripts/clean_paste.py FILE --in-place    # citation tokens, utm tails, zero-width
-python3 scripts/strip_watermarks.py FILE                       # NBSP family, selectors, homoglyphs
+python3 delegates/ru/scripts/clean_paste.py FILE --in-place    # pass 1: citation tokens, utm, zero-width
+python3 delegates/text-hygiene/scripts/clean_text.py FILE -o OUT --stats   # pass 2: full format-char table
+python3 scripts/strip_watermarks.py FILE                       # pass 3: homoglyphs
 python3 scripts/normalize_whitespace.py --target md FILE       # blank-line collapse
 
 cd delegates/de && python3 scripts/humanizer_audit.py --file FILE --mode sachlich
@@ -61,7 +65,9 @@ Every script is idempotent and takes `--check`, which exits 1 on findings, so th
 
 The cleanup removes characters that are defects in their own right: they break grep, diffs, terminals and CI, and they leak into commits.
 
-It does not remove statistical watermarks such as SynthID-text, which are carried in the distribution of token choices rather than in characters. No character-level pass touches them, and this project makes no claim otherwise.
+It does not remove statistical watermarks such as SynthID-text, Kirchenbauer green-list or keyed-Gumbel marks, which are carried in the distribution of token choices rather than in characters. No character-level pass touches them, and this project makes no claim otherwise. `delegates/text-hygiene/references/mark-classes.md` describes the classes.
+
+Binary provenance — C2PA, EXIF, XMP, Office document properties — lives in file metadata, which none of the vendored passes reads. The text-hygiene upstream ships an HTTP service that does; this project does not vendor it. Set `WATERMARKS_SERVICE_URL` to use it, and the skill will say plainly when binary provenance was not checked rather than implying a file was cleaned.
 
 ## Updating delegates
 

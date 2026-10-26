@@ -9,6 +9,7 @@ Each delegate is a self-contained directory. Updating one means replacing that d
 | en | [blader/humanizer](https://github.com/blader/humanizer) | 3.1.0 | `8c307f3` | MIT | 2026-10-26 |
 | de | [marmbiz/humanizer-de](https://github.com/marmbiz/humanizer-de) | 5.28.2 | `9248315` | MIT AND CC-BY-SA-4.0 | 2026-10-26 |
 | ru | [Vladimir-Human/humanizer-ru](https://github.com/Vladimir-Human/humanizer-ru) | 4.1.5 | `9b1d29f` | MIT | 2026-10-26 |
+| text-hygiene | [guillaumemeyer/watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover) | 0.7.0 | `5c18093` | MIT | 2026-10-26 |
 
 Each delegate also carries `delegates/<lang>/VERSION` and `delegates/<lang>/COMMIT`, so a diff against upstream is possible without consulting this table.
 
@@ -25,7 +26,7 @@ Run it on demand from the Actions tab with `workflow_dispatch`, optionally namin
 ## Updating one delegate by hand
 
 ```bash
-scripts/sync_delegates.sh de            # dry run, shows what changed
+scripts/sync_delegates.sh de            # en, de, ru or th; dry run, shows what changed
 scripts/sync_delegates.sh de --apply
 ./scripts/validate.sh
 ```
@@ -46,6 +47,7 @@ This is the trap that broke the first sync script, so the path map lives in `scr
 | en | `SKILL.md` at repo root | none | none |
 | de | `skills/humanizer-de/SKILL.md` | `references/` at root | `scripts/` at root |
 | ru | `skills/humanizer-ru/SKILL.md` | `skills/humanizer-ru/references/` | `skills/humanizer-ru/scripts/` |
+| th | `skills/clean-user-facing-text/SKILL.md` | same directory, plus two files from `skills/remove-ai-marks/references/` | same directory |
 
 The sync script fails loudly rather than vendoring a wrong file if an upstream `SKILL.md` is not where it expects.
 
@@ -59,6 +61,8 @@ Each upstream ships its instructions as `SKILL.md`, and a nested `SKILL.md` insi
 
 **de** — `humanizer-de.md`, `references/` (10 files, `patterns.md` is the large one), `scripts/` (15 files), `requirements-precise.txt`, licence and notice. The scripts are dependency-free; `requirements-precise.txt` covers the optional spaCy path for `--precise` only, and nothing here installs it.
 
+**text-hygiene** — `text-hygiene.md` (upstream `skills/clean-user-facing-text/SKILL.md`, renamed), its `references/` and `scripts/`, licence, plus `mark-classes.md` and `removal-matrix.md` lifted from the upstream's other skill. Standard-library Python 3, no service. Deliberately **not** vendored from that repository: the `remove-ai-marks` thin client, which needs a running HTTP service on port 8765; the Docker images under `service/`; the benchmark corpora; and `stealer/`, a black-box watermark-stealing module that needs a 30k prompt corpus and a model run, adds nothing to a writing skill, and would change what this repository is.
+
 **ru** — `humanizer-ru.md`, `references/` (`patterns.md`, `examples.md`), `scripts/` (`clean_paste.py`, `check_facts.py`), licence. The upstream `eval/` corpus is not vendored: it is large, it exists to benchmark that project, and it has no role here.
 
 ## Own scripts
@@ -67,7 +71,7 @@ Not vendored, maintained here:
 
 | Script | Purpose |
 |---|---|
-| `scripts/strip_watermarks.py` | NBSP family, variation selectors, leftover citation tokens, homoglyph normalisation scoped to word-internal script mixing |
+| `scripts/strip_watermarks.py` | Homoglyph normalisation scoped to word-internal script mixing, plus leftover vendor tokens. Pass 3 of the cleanup chain; the invisible-character table belongs to the text-hygiene delegate |
 | `scripts/normalize_whitespace.py` | Blank-line collapse with `md`, `plain` and `commit` targets |
 | `scripts/sync_delegates.sh` | Upstream refresh with per-delegate path maps and renumbering warning |
 | `scripts/validate.sh` | Package self-check, also used by CI |

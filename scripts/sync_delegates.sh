@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Refresh one vendored delegate from upstream and report what changed.
-#   scripts/sync_delegates.sh <en|de|ru> [--apply]
+#   scripts/sync_delegates.sh <en|de|ru|th> [--apply]
 # Without --apply it only reports. Upstream layouts differ and have moved
 # before, so each delegate carries its own path map below.
 set -euo pipefail
@@ -16,11 +16,16 @@ case "$LANG_CODE" in
       SKILL_SRC="skills/humanizer-de/SKILL.md";  EXTRA="LICENSE NOTICE references scripts requirements-precise.txt" ;;
   ru) REPO=https://github.com/Vladimir-Human/humanizer-ru.git
       SKILL_SRC="skills/humanizer-ru/SKILL.md";  EXTRA="LICENSE skills/humanizer-ru/references:references skills/humanizer-ru/scripts:scripts" ;;
-  *)  echo "usage: $0 <en|de|ru> [--apply]" >&2; exit 2 ;;
+  th) REPO=https://github.com/guillaumemeyer/watermarks-remover.git
+      SKILL_SRC="skills/clean-user-facing-text/SKILL.md"
+      EXTRA="LICENSE skills/clean-user-facing-text/references:references skills/clean-user-facing-text/scripts:scripts skills/remove-ai-marks/references/mark-classes.md:references/mark-classes.md skills/remove-ai-marks/references/removal-matrix.md:references/removal-matrix.md" ;;
+  *)  echo "usage: $0 <en|de|ru|th> [--apply]" >&2; exit 2 ;;
 esac
 
-DEST="$ROOT/delegates/$LANG_CODE"
-SKILL_DEST="humanizer-$LANG_CODE.md"
+case "$LANG_CODE" in
+  th) DEST="$ROOT/delegates/text-hygiene"; SKILL_DEST="text-hygiene.md" ;;
+  *)  DEST="$ROOT/delegates/$LANG_CODE";   SKILL_DEST="humanizer-$LANG_CODE.md" ;;
+esac
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -73,7 +78,10 @@ rm -f "$DEST/$SKILL_DEST"
 cp "$TMP/up/$SKILL_SRC" "$DEST/$SKILL_DEST"
 for spec in $EXTRA; do
   src="${spec%%:*}"; dst="${spec##*:}"
-  rm -rf "$DEST/$dst"
+  case "$dst" in
+    */*) mkdir -p "$(dirname "$DEST/$dst")"; rm -f "$DEST/$dst" ;;
+    *)   rm -rf "$DEST/$dst" ;;
+  esac
   [ -e "$TMP/up/$src" ] && cp -R "$TMP/up/$src" "$DEST/$dst"
 done
 find "$DEST" -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
